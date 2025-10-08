@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block content %}
+<header>
+    <h2>Welcome, {{ driver.name }}!</h2>
+    <p>Your Status: <strong>{{ driver.status | capitalize }}</strong></p>
+</header>
+
+<section id="my-ride">
+    <h3>My Current Ride</h3>
+    {% set active_ride = my_rides | selectattr('status', 'equalto', 'accepted') | first %}
+    {% if active_ride %}
+        <article>
+            <p><strong>From:</strong> {{ active_ride.source }}</p>
+            <p><strong>To:</strong> {{ active_ride.destination }}</p>
+            <form action="/complete_ride/{{ active_ride.id }}" method="post">
+                <input type="hidden" name="driver_id" value="{{ driver.id }}">
+                <button type="submit">Mark as Completed</button>
+            </form>
+        </article>
+    {% else %}
+        <p>You do not have an active ride.</p>
+    {% endif %}
+</section>
+
+<hr>
+
+<section id="available-rides">
+    <h3>Available Rides</h3>
+    {% if pending_rides %}
+        {% for ride in pending_rides %}
+            <article>
+                <p><strong>From:</strong> {{ ride.source }}</p>
+                <p><strong>To:</strong> {{ ride.destination }}</p>
+                {% if not active_ride %}
+                    <form action="/accept_ride/{{ ride.id }}" method="post" style="margin-top: 1rem;">
+                        <input type="hidden" name="driver_id" value="{{ driver.id }}">
+                        <button type="submit" class="secondary">Accept Ride</button>
+                    </form>
+                {% endif %}
+            </article>
+        {% endfor %}
+    {% else %}
+        <p>No pending rides available.</p>
+    {% endif %}
+</section>
+
+<script>
+    setTimeout(function() {
+        window.location.reload(1);
+    }, 30000); // Refresh every 30 seconds
+</script>
+
+{% endblock %}

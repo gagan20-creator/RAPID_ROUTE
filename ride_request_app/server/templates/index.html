@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block content %}
+<article>
+    <header><h2>Book a Ride</h2></header>
+
+    <form action="/ride_request/" method="post">
+        <label for="source">Source</label>
+        <input type="text" id="source" name="source" placeholder="e.g., Koramangala" required>
+
+        <label for="destination">Destination</label>
+        <input type="text" id="destination" name="destination" placeholder="e.g., Indiranagar" required>
+
+        <button type="submit">Request Ride</button>
+    </form>
+</article>
+{% endblock %}

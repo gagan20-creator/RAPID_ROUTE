@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Driver App</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>body { font-family: 'Inter', sans-serif; }</style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen pb-20">
+
+    <div class="bg-gray-800 p-4 shadow-md flex justify-between items-center sticky top-0 z-10">
+        <div class="flex items-center gap-2">
+            <div class="font-bold text-lg">Rapid<span class="text-blue-500">Driver</span></div>
+        </div>
+        <div class="flex items-center gap-3">
+             <!-- Name Display -->
+             <div id="driverNameHeader" class="text-xs text-gray-300 text-right">Loading...</div>
+             <div id="driverClock" class="font-mono text-sm bg-black px-2 py-1 rounded">--:--</div>
+            <div id="statusBadge" class="bg-green-500 text-black text-xs font-bold px-3 py-1 rounded-full uppercase">Online</div>
+        </div>
+    </div>
+
+    <!-- Login -->
+    <div class="p-4 bg-gray-800 border-b border-gray-700 flex items-center justify-between text-sm">
+        <span class="text-gray-400">Driver ID (1-7):</span>
+        <input type="number" id="driverId" value="1" class="bg-gray-700 text-white p-1 rounded w-16 text-center focus:ring-1 focus:ring-blue-500 outline-none" onchange="fetchDriverDetails()">
+    </div>
+
+    <div class="p-4 max-w-lg mx-auto">
+        <!-- Active Ride -->
+        <div id="activeRidePanel" class="hidden">
+            <div class="bg-blue-600 rounded-2xl p-6 shadow-2xl relative overflow-hidden">
+                <h2 class="text-white text-opacity-80 text-sm font-semibold uppercase tracking-wider mb-1">Current Trip</h2>
+                <div class="text-2xl font-bold mb-4" id="activeRideDetails">Loading...</div>
+                
+                <div id="waitingMsg" class="hidden bg-black bg-opacity-20 p-3 rounded-lg mb-4 flex items-center gap-2">
+                    <span class="animate-pulse">⏳</span>
+                    <span class="text-sm font-mono" id="waitText">Scheduled wait...</span>
+                </div>
+                
+                <div id="readyMsg" class="hidden bg-green-500 text-white p-3 rounded-lg mb-4 text-center font-bold animate-bounce">
+                    👋 RIDER IS READY! GO!
+                </div>
+
+                <div class="grid grid-cols-1 gap-3">
+                    <button id="btnStart" onclick="startRide()" class="hidden w-full bg-black text-white py-3 rounded-xl font-bold">START TRIP</button>
+                    <button id="btnComplete" onclick="completeRide()" class="hidden w-full bg-red-500 text-white py-3 rounded-xl font-bold">COMPLETE TRIP</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Incoming List -->
+        <div id="requestsContainer">
+            <h3 class="text-gray-400 text-xs font-bold uppercase tracking-widest mb-4 mt-6">Incoming Requests</h3>
+            <div id="requestList" class="space-y-4"></div>
+        </div>
+    </div>
+
+    <!-- Delay Modal -->
+    <div id="delayModal" class="hidden fixed inset-0 bg-black/90 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div class="bg-gray-800 w-full max-w-sm rounded-2xl p-6 border border-gray-700 shadow-2xl">
+            <div class="flex items-center gap-3 mb-4">
+                <div class="bg-yellow-500/20 p-2 rounded-full text-yellow-500 text-xl">⚠️</div>
+                <div>
+                    <h3 class="text-lg font-bold text-white">Delay Requested</h3>
+                    <p class="text-gray-400 text-sm">Rider wants to start later</p>
+                </div>
+            </div>
+            
+            <div class="bg-gray-900 p-4 rounded-xl mb-6 text-center border border-gray-700">
+                <span class="text-3xl font-bold text-white" id="delayTime">20</span>
+                <span class="text-gray-500 text-sm block">minutes from now</span>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+                <button onclick="respondDelay(false)" class="bg-gray-700 hover:bg-gray-600 py-3 rounded-xl font-semibold">Reject</button>
+                <button onclick="respondDelay(true)" class="bg-blue-600 hover:bg-blue-500 py-3 rounded-xl font-semibold text-white">Accept</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Free Check Modal -->
+    <div id="freeCheckModal" class="hidden fixed inset-0 bg-blue-600/90 backdrop-blur-sm flex items-center justify-center z-50 px-6">
+        <div class="text-center text-white">
+            <h2 class="text-3xl font-bold mb-2">Trip Complete</h2>
+            <p class="text-blue-100 mb-8 text-lg">Are you ready for the next ride?</p>
+            <button onclick="markAvailable()" class="w-full bg-white text-blue-600 py-4 rounded-full font-bold text-lg shadow-lg">YES, I'M AVAILABLE</button>
+        </div>
+    </div>
+
+    <script>
+        const API = 'http://localhost:8000';
+        let currentRide = null;
+        let driverId = 1;
+        const distanceCache = {};
+
+        function getPickupDist(rideId) {
+            if (!distanceCache[rideId]) {
+                distanceCache[rideId] = (Math.random() * (4.0 - 0.5) + 0.5).toFixed(1);
+            }
+            return distanceCache[rideId];
+        }
+        
+        function updateClock() {
+            const now = new Date();
+            let hours = now.getHours();
+            let minutes = now.getMinutes();
+            const ampm = hours >= 12 ? 'PM' : 'AM';
+            hours = hours % 12; hours = hours ? hours : 12;
+            minutes = minutes < 10 ? '0'+minutes : minutes;
+            document.getElementById('driverClock').innerText = hours + ':' + minutes + ' ' + ampm;
+        }
+        setInterval(updateClock, 1000); updateClock();
+
+        // Fetch Driver Name
+        async function fetchDriverDetails() {
+            driverId = document.getElementById('driverId').value;
+            try {
+                const res = await fetch(`${API}/drivers`);
+                const drivers = await res.json();
+                const me = drivers.find(d => d.id == driverId);
+                if(me) {
+                    document.getElementById('driverNameHeader').innerHTML = `<span class="font-bold block text-sm">${me.name}</span><span class="text-[10px]">${me.car_model}</span>`;
+                } else {
+                    document.getElementById('driverNameHeader').innerText = "Unknown Driver";
+                }
+            } catch(e) { console.log(e); }
+        }
+        fetchDriverDetails();
+
+        async function fetchRequests() {
+            try {
+                driverId = document.getElementById('driverId').value;
+                
+                const allRidesRes = await fetch(`${API}/rides?driver_id=${driverId}`);
+                if (!allRidesRes.ok) throw new Error("Network response was not ok");
+                const myRides = await allRidesRes.json();
+                
+                const active = myRides.find(r => ['assigned', 'offering_delay', 'waiting_for_start', 'in_progress'].includes(r.status));
+
+                if (active) {
+                    currentRide = active;
+                    renderActiveRide();
+                    document.getElementById('requestsContainer').classList.add('hidden');
+                    document.getElementById('statusBadge').innerText = "BUSY";
+                    document.getElementById('statusBadge').className = "bg-red-500 text-white text-xs font-bold px-3 py-1 rounded-full uppercase";
+                    
+                    if (active.status === 'offering_delay') {
+                        document.getElementById('delayTime').innerText = active.delay_minutes;
+                        document.getElementById('delayModal').classList.remove('hidden');
+                    } else {
+                        document.getElementById('delayModal').classList.add('hidden');
+                    }
+                    return; 
+                }
+
+                document.getElementById('activeRidePanel').classList.add('hidden');
+                document.getElementById('requestsContainer').classList.remove('hidden');
+                document.getElementById('statusBadge').innerText = "ONLINE";
+                document.getElementById('statusBadge').className = "bg-green-500 text-black text-xs font-bold px-3 py-1 rounded-full uppercase";
+
+                // Pass viewer_id for hiding logic
+                const res = await fetch(`${API}/rides?status=pending&viewer_id=${driverId}`);
+                if (!res.ok) throw new Error("Network response was not ok");
+                let rides = await res.json();
+                
+                rides = rides.map(r => ({ ...r, pickup_dist: getPickupDist(r.id) }));
+                
+                rides.sort((a, b) => {
+                    if (b.driver_incentive !== a.driver_incentive) {
+                        return b.driver_incentive - a.driver_incentive; 
+                    }
+                    return parseFloat(a.pickup_dist) - parseFloat(b.pickup_dist); 
+                });
+
+                const list = document.getElementById('requestList');
+                list.innerHTML = '';
+                
+                if(rides.length === 0) {
+                    list.innerHTML = '<div class="text-center text-gray-600 mt-10">No rides nearby.</div>';
+                    return;
+                }
+
+                rides.forEach(r => {
+                    const isHighPriority = r.driver_incentive > 0;
+                    const incentiveBadge = isHighPriority 
+                        ? `<div class="bg-red-500 text-white text-xs font-bold px-2 py-1 rounded animate-pulse">🔥 +₹${r.driver_incentive} BONUS</div>` 
+                        : '';
+                    const cardBorder = isHighPriority ? 'border-red-500 border-2' : 'border-gray-700 border';
+
+                    const div = document.createElement('div');
+                    div.className = `bg-gray-800 rounded-xl p-5 shadow-lg transition ${cardBorder}`;
+                    div.innerHTML = `
+                        <div class="flex justify-between items-start mb-4">
+                            <div>
+                                <div class="flex gap-2 mb-1">
+                                    ${incentiveBadge}
+                                </div>
+                                <h4 class="text-xl font-bold text-white">${r.rider_name}</h4>
+                            </div>
+                            <div class="text-right">
+                                <span class="block text-2xl font-bold text-white">₹${r.base_fare}</span>
+                                <span class="text-xs text-gray-400">Total</span>
+                            </div>
+                        </div>
+                        <div class="mb-4 space-y-2">
+                            <div class="flex items-center gap-2 text-sm text-gray-300">
+                                <span class="h-2 w-2 rounded-full bg-green-500"></span> 
+                                <span>Pickup: ${r.pickup_dist} km away</span>
+                            </div>
+                            <div class="flex items-center gap-2 text-sm text-gray-300">
+                                <span class="h-2 w-2 rounded-full bg-blue-500"></span> 
+                                <span>Trip Distance: ${r.distance_km} km</span>
+                            </div>
+                            <div class="flex items-center gap-2 text-sm text-gray-300">
+                                <span class="h-2 w-2 rounded-full bg-red-500"></span> 
+                                <span>To: ${r.destination}</span>
+                            </div>
+                        </div>
+                        <button onclick="acceptRide(${r.id})" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg transition">TAP TO ACCEPT</button>
+                    `;
+                    list.appendChild(div);
+                });
+            } catch (error) {
+                console.error("Connection error:", error);
+                document.getElementById('statusBadge').innerText = "OFFLINE";
+                document.getElementById('statusBadge').className = "bg-gray-500 text-white text-xs font-bold px-3 py-1 rounded-full uppercase";
+            }
+        }
+
+        async function acceptRide(rideId) {
+            try {
+                await fetch(`${API}/accept_ride`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ ride_id: rideId, driver_id: driverId })
+                });
+                fetchRequests();
+            } catch (error) { console.error("Error accepting ride:", error); }
+        }
+
+        async function respondDelay(accepted) {
+            try {
+                await fetch(`${API}/respond_to_delay`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ ride_id: currentRide.id, accepted: accepted })
+                });
+                document.getElementById('delayModal').classList.add('hidden');
+                fetchRequests();
+            } catch (error) { console.error("Error responding delay:", error); }
+        }
+
+        async function startRide() {
+            try {
+                await fetch(`${API}/start_ride`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ ride_id: currentRide.id })
+                });
+                fetchRequests();
+            } catch (error) { console.error("Error starting ride:", error); }
+        }
+
+        async function completeRide() {
+            try {
+                await fetch(`${API}/complete_ride`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ ride_id: currentRide.id })
+                });
+                document.getElementById('activeRidePanel').classList.add('hidden');
+                currentRide = null;
+                setTimeout(() => {
+                    document.getElementById('freeCheckModal').classList.remove('hidden');
+                }, 5000); 
+            } catch (error) { console.error("Error completing ride:", error); }
+        }
+
+        async function markAvailable() {
+            try {
+                await fetch(`${API}/driver/mark_available`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ ride_id: 0, driver_id: driverId })
+                });
+                document.getElementById('freeCheckModal').classList.add('hidden');
+                fetchRequests();
+            } catch (error) { console.error("Error marking available:", error); }
+        }
+
+        function renderActiveRide() {
+            const p = document.getElementById('activeRidePanel');
+            p.classList.remove('hidden');
+            
+            document.getElementById('activeRideDetails').innerHTML = `
+                <div class="text-sm font-normal text-blue-200">Dropping off</div>
+                <div>${currentRide.destination}</div>
+            `;
+            const btnStart = document.getElementById('btnStart');
+            const btnComplete = document.getElementById('btnComplete');
+            const msg = document.getElementById('waitingMsg');
+            const readyMsg = document.getElementById('readyMsg');
+
+            btnStart.classList.add('hidden'); 
+            btnComplete.classList.add('hidden'); 
+            msg.classList.add('hidden');
+            readyMsg.classList.add('hidden');
+
+            if (currentRide.status === 'assigned') {
+                btnStart.classList.remove('hidden');
+                btnStart.innerText = "ARRIVED / START TRIP";
+                if (currentRide.is_delayed_mode) {
+                    readyMsg.classList.remove('hidden');
+                }
+            } else if (currentRide.status === 'waiting_for_start') {
+                msg.classList.remove('hidden');
+                document.getElementById('waitText').innerText = `Wait ${currentRide.delay_minutes} mins (Delay Active)`;
+                btnStart.classList.remove('hidden'); 
+                btnStart.className = "w-full bg-gray-700 text-gray-300 py-3 rounded-xl font-bold border border-gray-600";
+                btnStart.innerText = "FORCE START";
+            } else if (currentRide.status === 'in_progress') {
+                btnComplete.classList.remove('hidden');
+            }
+        }
+        setInterval(fetchRequests, 2000);
+    </script>
+</body>
+</html>
